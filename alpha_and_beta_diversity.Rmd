@@ -1,0 +1,163 @@
+---
+title: "Alpha and beta diversity"
+output: html_document
+---
+
+
+```{r}
+pseq <- makePhyloseqFromTreeSummarizedExperiment(se)
+
+
+# Exclude all participants who have used antibiotics in the last four weeks
+pseq = subset_samples(pseq, antibiotics != "last4weeks")
+
+# Split by age
+otu_data_a = subset_samples(pseq, adult == "1")
+otu_data_a
+
+
+#Removing missing 
+otu_data_a = subset_samples(otu_data_a, snoring != "na")
+
+
+# Aggregate to Genus level
+Genus_data = aggregate_taxa(otu_data_a, "Genus")
+
+meta_data_a = meta(otu_data_a)
+
+```
+
+
+#Alpha diversity 
+
+```{r}
+
+#Rerifraction 
+ps.rarefied = rarefy_even_depth(Genus_data, rngseed=1, sample.size=1103, replace=F)
+
+hmp.div <- alpha(ps.rarefied, index = "all")
+
+hmp.div
+
+datatable(hmp.div)
+
+# get the metadata out as seprate object
+hmp.meta <- meta(ps.rarefied)
+
+# Add the rownames as a new colum for easy integration later.
+hmp.meta$sam_name <- rownames(hmp.meta)
+
+# Add the rownames to diversity table
+hmp.div$sam_name <- rownames(hmp.div)
+
+# merge these two data frames into one
+div.df <- merge(hmp.div,hmp.meta, by = "sam_name")
+
+# check the tables
+colnames(div.df)
+
+# convert phyloseq object into a long data format.
+
+div.df2 <- div.df[, c("snoring",  "diversity_shannon", "observed" , "chao1" , "evenness_pielou" )]
+
+# the names are not pretty. we can replace them
+
+colnames(div.df2) <- c("snoring",  "Shannon", "Observed"  , "Chao1" ,"Pielous evenness")
+
+# check
+colnames(div.df2)
+div_df_melt <- reshape2::melt(div.df2)
+head(div_df_melt)
+
+```
+
+
+```{r}
+# Now use this data frame to plot
+p <- ggboxplot(div_df_melt, x = "snoring", y = "value",
+               fill = "snoring",
+               palette = "lancet",
+               legend= "right",
+               facet.by = "variable",
+               scales = "free")
+
+p <- p + rotate_x_text()
+# we will remove the x axis lables
+
+p <- p + rremove("x.text")
+p
+
+lev <- levels(div_df_melt$snoring) # get the variables
+lev
+# make a pairwise list that we want to compare.
+L.pairs <- combn(seq_along(lev), 2, simplify = FALSE, FUN = function(i) lev[i])
+
+
+pval <- list(
+  cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 0.1, 1),
+  symbols = c("****", "***", "**", "*", "0.05")
+)
+
+p2 <- p + stat_compare_means(
+  comparisons = L.pairs,
+  label = "p.signif",
+  symnum.args = list(
+    cutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 0.1, 1),
+    symbols = c("****", "***", "**", "*", "0.05")
+  )
+)
+p2
+
+ggsave("alphadiversity_snoring.png", height = 10, width = 10, units = 'in', dpi = 300)
+
+```
+
+
+
+#Beta diversity Plot 
+
+```{r}
+##Snoring beta diveristy
+
+epseq = subset_samples(ps.rarefied, !is.na(get("snoring")))
+set.seed(123)
+
+# PERMANOVA
+permanova = adonis(t(abundances(epseq)) ~ snoring,
+                   data = meta(epseq),
+                   permutations = 999, method = "bray")$aov.tab
+
+# PERMDISP
+dis = vegdist(t(abundances(epseq)), method = "bray")
+groups = meta(epseq)[, "snoring"]
+mod = betadisper(d = dis, group = groups, type = "median")
+
+# Draw the Plot
+p1 = signif(permanova$`Pr(>F)`[1], 2)
+p2 = signif(permutest(mod)$tab$`Pr(>F)`[1], 2)
+
+labs = paste0("PCoA", 1:2, " (", signif(100 * mod$eig / sum(mod$eig), 3), "%)")
+
+# Export
+# Consider change the palette of "#FF99FF", "#FF0000FF", "#CCFF00"
+# since it is hard to read
+# but make sure the palette of beta diversity plot is the same alpha diversity plot
+jpeg(filename = "betadiversity_snoring.jpeg",
+     height = 5, width = 7, res = 300, units = "in")
+plot(mod, pch = 15:18, cex.lab = 1.25, cex = 0.7, label.cex = 0.6,
+     main = "PCoA plot of Bray-Curtis dissimilarity", xlab = labs[1], ylab = labs[2],
+     ylim = c(-0.5, 0.5), xlim = c(-0.6, 0.6), xaxt = "n",
+     col = c("blue", "#FF0000FF", "black", "green"), sub = NULL,
+     hull = FALSE, ellipse = TRUE, conf = 0.68) # 68% data coverage for data ellipses
+axis(1, at = round(seq(-0.6, 0.6, by = 0.2), 1), las = 1)
+legend(0.5, 0.4, legend = c ("never", "< 1/week", "1-2/week", "3-5 nights/days a week"),
+       
+       col = c("blue", "#FF0000FF", "black", "green"),
+       pch = 15:16, cex = 0.8)
+legend(x = 0.2, y = -0.3, cex = 0.7,
+       legend = c(paste0("p (PERMANOVA) = ", p1),
+                  paste0("p (PERMDISP) = ", p2)))
+dev.off()
+
+```
+

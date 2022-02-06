@@ -1,0 +1,62 @@
+
+
+
+
+```{r}
+pseq <- makePhyloseqFromTreeSummarizedExperiment(se)
+
+```
+
+
+
+# Exclude all participants who have used antibiotics in the last four weeks
+pseq = subset_samples(pseq, antibiotics != "last4weeks")
+
+# Split by age
+otu_data_a = subset_samples(pseq, adult == "1")
+otu_data_a
+
+
+meta_data_a = meta(otu_data_a)
+ls(meta_data_a)
+
+meta_data_a = meta_data_a%>%mutate(bmi = as.numeric(weighto) / (as.numeric(heighto) / 100)^2, age = as.numeric(N_age), gender =sexo , 
+                                   height =heighto, weight=weighto, snoring=snoringo.x, sleep_difficutly = diso, heart_burn =gero )
+
+
+
+#Descriptive table for total sample 
+meta_data_a %>%
+  select( "age",  "gender",  "height", "weight", bmi, "smoke" , "educationo", snoring, heart_burn, sleep_difficutly) %>%
+  tbl_summary(
+    type = all_continuous() ~ "continuous2",
+    statistic = all_continuous() ~ c("{N_nonmiss}",
+                                     "{mean} ({sd})",
+                                     "{min}, {max}"),
+    missing = "no"
+  )
+
+#stratified based on snoring
+meta_data_a %>%
+  select("age",  "gender",  "height", "weight", bmi, "smoke" , "educationo",snoring, heart_burn, sleep_difficutly) %>%
+  tbl_summary(
+    by = "snoring",
+    type = all_continuous() ~ "continuous2",
+    statistic = all_continuous() ~ c("{N_nonmiss}",
+                                     "{mean} ({sd})",
+                                     "{min}, {max}"),
+    missing = "no"
+  ) %>%
+  add_p(pvalue_fun = ~style_pvalue(.x, digits = 2))
+
+
+table(meta_data_a$snoring, useNA = "always")
+
+
+
+
+
+
+
+
+
